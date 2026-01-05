@@ -3,143 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StreamMultiView Pro</title>
+    <title>StreamMultiView Pro - No Scroll</title>
     <style>
         :root {
             --bg-color: #0f0f0f;
             --header-bg: #1e1e1e;
             --input-bg: #2a2a2a;
             --text-color: #efeff1;
-            --accent-color: #bf94ff; /* 明るめのパープル */
-            --danger-color: #ff4b4b;
+            --accent-color: #bf94ff;
         }
 
-        body {
+        /* 画面全体のスクロールを禁止 */
+        html, body {
             margin: 0;
             padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; 
             background-color: var(--bg-color);
             color: var(--text-color);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: sans-serif;
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
         }
 
-        /* ヘッダーデザインの洗練 */
         header {
+            height: 60px; /* 高さを固定 */
             background-color: var(--header-bg);
-            padding: 12px 20px;
+            padding: 0 20px;
             display: flex;
             gap: 12px;
             align-items: center;
             border-bottom: 1px solid #333;
-            z-index: 100;
+            box-sizing: border-box;
+            flex-shrink: 0;
         }
 
-        .logo {
-            font-weight: 800;
-            font-size: 1.2rem;
-            color: var(--accent-color);
-            letter-spacing: -0.5px;
-            margin-right: 10px;
-        }
+        .input-group { flex-grow: 1; display: flex; gap: 5px; }
+        input[type="text"] { flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid #333; background: var(--input-bg); color: white; }
+        button { padding: 8px 16px; background-color: var(--accent-color); border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
 
-        .input-group {
-            flex-grow: 1;
-            display: flex;
-            gap: 5px;
-        }
-
-        input[type="text"] {
-            flex-grow: 1;
-            padding: 10px 16px;
-            border-radius: 6px;
-            border: 1px solid #333;
-            background: var(--input-bg);
-            color: white;
-            transition: border 0.2s;
-        }
-
-        input[type="text"]:focus {
-            outline: none;
-            border-color: var(--accent-color);
-        }
-
-        button {
-            padding: 10px 20px;
-            background-color: var(--accent-color);
-            color: #000;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: transform 0.1s, opacity 0.2s;
-        }
-
-        button:hover { opacity: 0.9; }
-        button:active { transform: scale(0.98); }
-
-        /* グリッドレイアウトの最適化 */
+        /* グリッドコンテナ：ここがポイント */
         #grid-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
-            gap: 8px;
-            padding: 8px;
             flex-grow: 1;
-            overflow-y: auto;
-            background: #000;
-        }
-
-        /* 要素数に応じた調整 */
-        #grid-container:has(> :last-child:nth-child(1)) { grid-template-columns: 1fr; }
-        @media (max-width: 500px) {
-            #grid-container { grid-template-columns: 1fr; }
+            gap: 4px;
+            padding: 4px;
+            box-sizing: border-box;
+            /* 要素数に応じてJavaScriptで grid-template-columns/rows を書き換える */
         }
 
         .video-wrapper {
             position: relative;
             width: 100%;
-            aspect-ratio: 16 / 9;
-            background: #111;
-            border-radius: 4px;
-            overflow: hidden;
+            height: 100%; /* 親要素の高さに合わせる */
+            background: #000;
         }
 
         iframe { width: 100%; height: 100%; border: none; }
 
         .controls {
             position: absolute;
-            top: 8px;
-            right: 8px;
-            display: flex;
-            gap: 5px;
+            top: 5px;
+            right: 5px;
             opacity: 0;
-            transition: opacity 0.3s;
+            transition: opacity 0.2s;
             z-index: 10;
         }
-
         .video-wrapper:hover .controls { opacity: 1; }
-
-        .btn-icon {
-            background: rgba(0,0,0,0.7);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 5px 10px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .btn-icon.remove:hover { background: var(--danger-color); }
+        .btn-remove { background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+        .btn-remove:hover { background: #ff4b4b; }
     </style>
 </head>
 <body>
 
 <header>
-    <div class="logo">MultiView</div>
+    <div style="font-weight: bold; color: var(--accent-color);">MultiView</div>
     <div class="input-group">
-        <input type="text" id="urlInput" placeholder="Twitch / YouTube URLを貼り付け...">
+        <input type="text" id="urlInput" placeholder="URLを貼り付け...">
         <button onclick="handleAddClick()">追加</button>
     </div>
 </header>
@@ -147,30 +88,39 @@
 <div id="grid-container"></div>
 
 <script>
-    // 1. 状態管理（URLパラメータとの同期）
     let streams = [];
 
-    // 初期化：URLからストリーム情報を復元
     window.onload = () => {
         const params = new URLSearchParams(window.location.search);
         const savedStreams = params.get('s');
         if (savedStreams) {
             streams = savedStreams.split(',');
             streams.forEach(url => renderVideo(decodeURIComponent(url)));
+            updateLayout();
         }
     };
 
     function updateUrl() {
         const params = new URLSearchParams();
-        if (streams.length > 0) {
-            params.set('s', streams.map(s => encodeURIComponent(s)).join(','));
-        }
-        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + 
-                       (params.toString() ? '?' + params.toString() : '');
-        window.history.pushState({ path: newUrl }, '', newUrl);
+        if (streams.length > 0) params.set('s', streams.map(s => encodeURIComponent(s)).join(','));
+        const newUrl = window.location.origin + window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.pushState(null, '', newUrl);
     }
 
-    // 2. 動画追加ロジック
+    // レイアウトを動的に計算する関数
+    function updateLayout() {
+        const container = document.getElementById('grid-container');
+        const count = streams.length;
+        if (count === 0) return;
+
+        // 列数(cols)と行数(rows)を計算
+        const cols = Math.ceil(Math.sqrt(count));
+        const rows = Math.ceil(count / cols);
+
+        container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+        container.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    }
+
     function handleAddClick() {
         const input = document.getElementById('urlInput');
         const url = input.value.trim();
@@ -178,6 +128,7 @@
 
         if (renderVideo(url)) {
             streams.push(url);
+            updateLayout();
             updateUrl();
             input.value = "";
         }
@@ -196,22 +147,14 @@
             embedUrl = `https://player.twitch.tv/?channel=${channelName}&parent=${hostname}&autoplay=true&muted=true`;
         }
 
-        if (!embedUrl) {
-            alert("無効なURLです。");
-            return false;
-        }
+        if (!embedUrl) return false;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'video-wrapper';
-        wrapper.dataset.url = url;
-        
         wrapper.innerHTML = `
-            <div class="controls">
-                <button class="btn-icon remove" onclick="removeStream('${url}', this)">✕ 削除</button>
-            </div>
+            <div class="controls"><button class="btn-remove" onclick="removeStream('${url}', this)">✕</button></div>
             <iframe src="${embedUrl}" allowfullscreen allow="autoplay; fullscreen"></iframe>
         `;
-
         container.appendChild(wrapper);
         return true;
     }
@@ -219,12 +162,11 @@
     function removeStream(url, btn) {
         btn.closest('.video-wrapper').remove();
         streams = streams.filter(s => s !== url);
+        updateLayout();
         updateUrl();
     }
 
-    document.getElementById('urlInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleAddClick();
-    });
+    document.getElementById('urlInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleAddClick(); });
 </script>
 
 </body>
