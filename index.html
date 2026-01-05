@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StreamMultiView Pro - No Scroll</title>
+    <title>StreamMultiView Pro - Drag & Drop</title>
     <style>
         :root {
             --bg-color: #0f0f0f;
@@ -13,66 +13,56 @@
             --accent-color: #bf94ff;
         }
 
-        /* 画面全体のスクロールを禁止 */
         html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden; 
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: sans-serif;
-            display: flex;
-            flex-direction: column;
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: var(--bg-color);
+            color: var(--text-color); font-family: sans-serif;
+            display: flex; flex-direction: column;
         }
 
         header {
-            height: 60px; /* 高さを固定 */
-            background-color: var(--header-bg);
-            padding: 0 20px;
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            border-bottom: 1px solid #333;
-            box-sizing: border-box;
-            flex-shrink: 0;
+            height: 60px; background-color: var(--header-bg);
+            padding: 0 20px; display: flex; gap: 12px;
+            align-items: center; border-bottom: 1px solid #333;
+            box-sizing: border-box; flex-shrink: 0;
+            z-index: 100;
         }
 
         .input-group { flex-grow: 1; display: flex; gap: 5px; }
         input[type="text"] { flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid #333; background: var(--input-bg); color: white; }
         button { padding: 8px 16px; background-color: var(--accent-color); border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
 
-        /* グリッドコンテナ：ここがポイント */
         #grid-container {
-            display: grid;
-            flex-grow: 1;
-            gap: 4px;
-            padding: 4px;
-            box-sizing: border-box;
-            /* 要素数に応じてJavaScriptで grid-template-columns/rows を書き換える */
+            display: grid; flex-grow: 1; gap: 6px; padding: 6px;
+            box-sizing: border-box; width: 100%; height: 100%;
         }
 
         .video-wrapper {
-            position: relative;
-            width: 100%;
-            height: 100%; /* 親要素の高さに合わせる */
-            background: #000;
+            position: relative; width: 100%; height: 100%;
+            background: #000; border: 2px solid transparent;
+            transition: border 0.2s, opacity 0.2s;
+            display: flex; flex-direction: column;
         }
 
-        iframe { width: 100%; height: 100%; border: none; }
+        /* ドラッグ中のスタイル */
+        .video-wrapper.dragging { opacity: 0.4; border: 2px dashed var(--accent-color); }
+        .video-wrapper.drag-over { border: 2px solid var(--accent-color); }
 
-        .controls {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            opacity: 0;
-            transition: opacity 0.2s;
-            z-index: 10;
+        /* ドラッグ用ハンドル兼コントロールバー */
+        .video-header {
+            height: 24px; background: #222; cursor: grab;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 8px; font-size: 10px; color: #aaa;
         }
-        .video-wrapper:hover .controls { opacity: 1; }
-        .btn-remove { background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
-        .btn-remove:hover { background: #ff4b4b; }
+        .video-header:active { cursor: grabbing; }
+
+        iframe { flex-grow: 1; width: 100%; border: none; pointer-events: auto; }
+        
+        /* ドラッグ中はiframeがイベントを邪魔しないようにする */
+        .dragging iframe { pointer-events: none; }
+
+        .btn-remove { background: none; color: #888; border: none; cursor: pointer; font-size: 14px; }
+        .btn-remove:hover { color: #ff4b4b; }
     </style>
 </head>
 <body>
@@ -89,6 +79,7 @@
 
 <script>
     let streams = [];
+    let dragSourceElement = null;
 
     window.onload = () => {
         const params = new URLSearchParams(window.location.search);
@@ -107,16 +98,12 @@
         window.history.pushState(null, '', newUrl);
     }
 
-    // レイアウトを動的に計算する関数
     function updateLayout() {
         const container = document.getElementById('grid-container');
         const count = streams.length;
         if (count === 0) return;
-
-        // 列数(cols)と行数(rows)を計算
         const cols = Math.ceil(Math.sqrt(count));
         const rows = Math.ceil(count / cols);
-
         container.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
         container.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
     }
@@ -125,7 +112,6 @@
         const input = document.getElementById('urlInput');
         const url = input.value.trim();
         if (!url) return;
-
         if (renderVideo(url)) {
             streams.push(url);
             updateLayout();
@@ -151,12 +137,76 @@
 
         const wrapper = document.createElement('div');
         wrapper.className = 'video-wrapper';
+        wrapper.draggable = true; // ドラッグ可能に
+        wrapper.dataset.url = url;
+
         wrapper.innerHTML = `
-            <div class="controls"><button class="btn-remove" onclick="removeStream('${url}', this)">✕</button></div>
+            <div class="video-header">
+                <span>::: DRAG TO REORDER</span>
+                <button class="btn-remove" onclick="removeStream('${url}', this)">✕</button>
+            </div>
             <iframe src="${embedUrl}" allowfullscreen allow="autoplay; fullscreen"></iframe>
         `;
+
+        // ドラッグイベントの登録
+        wrapper.addEventListener('dragstart', handleDragStart);
+        wrapper.addEventListener('dragenter', handleDragEnter);
+        wrapper.addEventListener('dragover', handleDragOver);
+        wrapper.addEventListener('dragleave', handleDragLeave);
+        wrapper.addEventListener('drop', handleDrop);
+        wrapper.addEventListener('dragend', handleDragEnd);
+
         container.appendChild(wrapper);
         return true;
+    }
+
+    // --- ドラッグ＆ドロップ ハンドラ ---
+    function handleDragStart(e) {
+        dragSourceElement = this;
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function handleDragOver(e) {
+        if (e.preventDefault) e.preventDefault();
+        return false;
+    }
+
+    function handleDragEnter(e) {
+        if (this !== dragSourceElement) this.classList.add('drag-over');
+    }
+
+    function handleDragLeave(e) {
+        this.classList.remove('drag-over');
+    }
+
+    function handleDrop(e) {
+        e.stopPropagation();
+        if (dragSourceElement !== this) {
+            // 要素の入れ替えロジック
+            const container = document.getElementById('grid-container');
+            const allNodes = Array.from(container.children);
+            const sourceIdx = allNodes.indexOf(dragSourceElement);
+            const targetIdx = allNodes.indexOf(this);
+
+            // 配列（streams）の入れ替え
+            const temp = streams[sourceIdx];
+            streams.splice(sourceIdx, 1);
+            streams.splice(targetIdx, 0, temp);
+
+            // DOMのリセットと再描画（iframeの状態維持のためにはDOM操作が必要だが、今回は配列入れ替え→再描画が確実）
+            container.innerHTML = '';
+            streams.forEach(url => renderVideo(url));
+            updateLayout();
+            updateUrl();
+        }
+        return false;
+    }
+
+    function handleDragEnd() {
+        this.classList.remove('dragging');
+        const items = document.querySelectorAll('.video-wrapper');
+        items.forEach(item => item.classList.remove('drag-over'));
     }
 
     function removeStream(url, btn) {
