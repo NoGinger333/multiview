@@ -3,13 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MultiView Streamer</title>
+    <title>StreamMultiView Pro</title>
     <style>
         :root {
-            --bg-color: #1a1a1a;
-            --header-bg: #2d2d2d;
-            --text-color: #ffffff;
-            --accent-color: #9146ff; /* Twitch Purple */
+            --bg-color: #0f0f0f;
+            --header-bg: #1e1e1e;
+            --input-bg: #2a2a2a;
+            --text-color: #efeff1;
+            --accent-color: #bf94ff; /* 明るめのパープル */
+            --danger-color: #ff4b4b;
         }
 
         body {
@@ -17,156 +19,211 @@
             padding: 0;
             background-color: var(--bg-color);
             color: var(--text-color);
-            font-family: sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             display: flex;
             flex-direction: column;
             height: 100vh;
             overflow: hidden;
         }
 
-        /* ヘッダーエリア */
+        /* ヘッダーデザインの洗練 */
         header {
             background-color: var(--header-bg);
-            padding: 10px 20px;
+            padding: 12px 20px;
             display: flex;
-            gap: 10px;
+            gap: 12px;
             align-items: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-            z-index: 10;
+            border-bottom: 1px solid #333;
+            z-index: 100;
+        }
+
+        .logo {
+            font-weight: 800;
+            font-size: 1.2rem;
+            color: var(--accent-color);
+            letter-spacing: -0.5px;
+            margin-right: 10px;
+        }
+
+        .input-group {
+            flex-grow: 1;
+            display: flex;
+            gap: 5px;
         }
 
         input[type="text"] {
             flex-grow: 1;
-            padding: 8px 12px;
-            border-radius: 4px;
-            border: none;
-            background: #444;
+            padding: 10px 16px;
+            border-radius: 6px;
+            border: 1px solid #333;
+            background: var(--input-bg);
             color: white;
+            transition: border 0.2s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--accent-color);
         }
 
         button {
-            padding: 8px 16px;
+            padding: 10px 20px;
             background-color: var(--accent-color);
-            color: white;
+            color: #000;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             font-weight: bold;
+            transition: transform 0.1s, opacity 0.2s;
         }
 
-        button:hover {
-            opacity: 0.9;
-        }
+        button:hover { opacity: 0.9; }
+        button:active { transform: scale(0.98); }
 
-        /* プレイヤー表示エリア */
+        /* グリッドレイアウトの最適化 */
         #grid-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(45%, 1fr));
-            gap: 10px;
-            padding: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            gap: 8px;
+            padding: 8px;
             flex-grow: 1;
             overflow-y: auto;
-            align-content: start;
+            background: #000;
         }
 
-        /* 1つの時は全画面、2つの時は横並びなど、要素数に応じた調整 */
-        #grid-container:has(> :last-child:nth-child(1)) {
-            grid-template-columns: 1fr;
+        /* 要素数に応じた調整 */
+        #grid-container:has(> :last-child:nth-child(1)) { grid-template-columns: 1fr; }
+        @media (max-width: 500px) {
+            #grid-container { grid-template-columns: 1fr; }
         }
 
         .video-wrapper {
             position: relative;
             width: 100%;
             aspect-ratio: 16 / 9;
-            background: #000;
+            background: #111;
+            border-radius: 4px;
+            overflow: hidden;
         }
 
-        iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
+        iframe { width: 100%; height: 100%; border: none; }
 
-        .remove-btn {
+        .controls {
             position: absolute;
-            top: 5px;
-            right: 5px;
-            background: rgba(0,0,0,0.6);
+            top: 8px;
+            right: 8px;
+            display: flex;
+            gap: 5px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 10;
+        }
+
+        .video-wrapper:hover .controls { opacity: 1; }
+
+        .btn-icon {
+            background: rgba(0,0,0,0.7);
             color: white;
             border: none;
-            border-radius: 50%;
-            width: 25px;
-            height: 25px;
+            border-radius: 4px;
+            padding: 5px 10px;
             cursor: pointer;
-            z-index: 5;
+            font-size: 12px;
         }
 
-        .remove-btn:hover {
-            background: red;
-        }
+        .btn-icon.remove:hover { background: var(--danger-color); }
     </style>
 </head>
 <body>
 
 <header>
-    <div style="font-weight: bold; margin-right: 10px;">MultiView</div>
-    <input type="text" id="urlInput" placeholder="Twitch または YouTube のURLを入力...">
-    <button onclick="addVideo()">追加</button>
+    <div class="logo">MultiView</div>
+    <div class="input-group">
+        <input type="text" id="urlInput" placeholder="Twitch / YouTube URLを貼り付け...">
+        <button onclick="handleAddClick()">追加</button>
+    </div>
 </header>
 
-<div id="grid-container">
-    </div>
+<div id="grid-container"></div>
 
 <script>
-    function addVideo() {
+    // 1. 状態管理（URLパラメータとの同期）
+    let streams = [];
+
+    // 初期化：URLからストリーム情報を復元
+    window.onload = () => {
+        const params = new URLSearchParams(window.location.search);
+        const savedStreams = params.get('s');
+        if (savedStreams) {
+            streams = savedStreams.split(',');
+            streams.forEach(url => renderVideo(decodeURIComponent(url)));
+        }
+    };
+
+    function updateUrl() {
+        const params = new URLSearchParams();
+        if (streams.length > 0) {
+            params.set('s', streams.map(s => encodeURIComponent(s)).join(','));
+        }
+        const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + 
+                       (params.toString() ? '?' + params.toString() : '');
+        window.history.pushState({ path: newUrl }, '', newUrl);
+    }
+
+    // 2. 動画追加ロジック
+    function handleAddClick() {
         const input = document.getElementById('urlInput');
         const url = input.value.trim();
         if (!url) return;
 
-        const container = document.getElementById('grid-container');
-        const hostname = window.location.hostname; // Twitchのparentパラメータ用
-        
-        let embedUrl = "";
-
-        // YouTube 解析
-        if (url.includes("youtube.com") || url.includes("youtu.be")) {
-            const videoId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
-            embedUrl = `https://www.youtube.com/embed/${videoId}`;
-        } 
-        // Twitch 解析
-        else if (url.includes("twitch.tv")) {
-            const channelName = url.split('/').pop().split('?')[0];
-            embedUrl = `https://player.twitch.tv/?channel=${channelName}&parent=${hostname}&autoplay=true`;
-        }
-
-        if (embedUrl) {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'video-wrapper';
-            
-            const iframe = document.createElement('iframe');
-            iframe.src = embedUrl;
-            iframe.allowFullscreen = true;
-            // Twitch用に追加の権限が必要な場合があるため
-            iframe.allow = "autoplay; fullscreen";
-
-            const closeBtn = document.createElement('button');
-            closeBtn.className = 'remove-btn';
-            closeBtn.innerText = '×';
-            closeBtn.onclick = () => wrapper.remove();
-
-            wrapper.appendChild(closeBtn);
-            wrapper.appendChild(iframe);
-            container.appendChild(wrapper);
-
-            input.value = ""; // 入力欄をクリア
-        } else {
-            alert("対応していないURL形式です。");
+        if (renderVideo(url)) {
+            streams.push(url);
+            updateUrl();
+            input.value = "";
         }
     }
 
-    // Enterキーでも追加できるようにする
-    document.getElementById('urlInput').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') addVideo();
+    function renderVideo(url) {
+        const container = document.getElementById('grid-container');
+        const hostname = window.location.hostname || "localhost";
+        let embedUrl = "";
+
+        if (url.includes("youtube.com") || url.includes("youtu.be")) {
+            const videoId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
+            embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1`;
+        } else if (url.includes("twitch.tv")) {
+            const channelName = url.split('/').pop().split('?')[0];
+            embedUrl = `https://player.twitch.tv/?channel=${channelName}&parent=${hostname}&autoplay=true&muted=true`;
+        }
+
+        if (!embedUrl) {
+            alert("無効なURLです。");
+            return false;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'video-wrapper';
+        wrapper.dataset.url = url;
+        
+        wrapper.innerHTML = `
+            <div class="controls">
+                <button class="btn-icon remove" onclick="removeStream('${url}', this)">✕ 削除</button>
+            </div>
+            <iframe src="${embedUrl}" allowfullscreen allow="autoplay; fullscreen"></iframe>
+        `;
+
+        container.appendChild(wrapper);
+        return true;
+    }
+
+    function removeStream(url, btn) {
+        btn.closest('.video-wrapper').remove();
+        streams = streams.filter(s => s !== url);
+        updateUrl();
+    }
+
+    document.getElementById('urlInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleAddClick();
     });
 </script>
 
