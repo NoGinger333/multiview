@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MultiView Streamer</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --header-bg: #2d2d2d;
+            --text-color: #ffffff;
+            --accent-color: #9146ff; /* Twitch Purple */
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ヘッダーエリア */
+        header {
+            background-color: var(--header-bg);
+            padding: 10px 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: none;
+            background: #444;
+            color: white;
+        }
+
+        button {
+            padding: 8px 16px;
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        /* プレイヤー表示エリア */
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(45%, 1fr));
+            gap: 10px;
+            padding: 10px;
+            flex-grow: 1;
+            overflow-y: auto;
+            align-content: start;
+        }
+
+        /* 1つの時は全画面、2つの時は横並びなど、要素数に応じた調整 */
+        #grid-container:has(> :last-child:nth-child(1)) {
+            grid-template-columns: 1fr;
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #000;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            z-index: 5;
+        }
+
+        .remove-btn:hover {
+            background: red;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="font-weight: bold; margin-right: 10px;">MultiView</div>
+    <input type="text" id="urlInput" placeholder="Twitch または YouTube のURLを入力...">
+    <button onclick="addVideo()">追加</button>
+</header>
+
+<div id="grid-container">
+    </div>
+
+<script>
+    function addVideo() {
+        const input = document.getElementById('urlInput');
+        const url = input.value.trim();
+        if (!url) return;
+
+        const container = document.getElementById('grid-container');
+        const hostname = window.location.hostname; // Twitchのparentパラメータ用
+        
+        let embedUrl = "";
+
+        // YouTube 解析
+        if (url.includes("youtube.com") || url.includes("youtu.be")) {
+            const videoId = url.split('v=')[1]?.split('&')[0] || url.split('/').pop();
+            embedUrl = `https://www.youtube.com/embed/${videoId}`;
+        } 
+        // Twitch 解析
+        else if (url.includes("twitch.tv")) {
+            const channelName = url.split('/').pop().split('?')[0];
+            embedUrl = `https://player.twitch.tv/?channel=${channelName}&parent=${hostname}&autoplay=true`;
+        }
+
+        if (embedUrl) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'video-wrapper';
+            
+            const iframe = document.createElement('iframe');
+            iframe.src = embedUrl;
+            iframe.allowFullscreen = true;
+            // Twitch用に追加の権限が必要な場合があるため
+            iframe.allow = "autoplay; fullscreen";
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'remove-btn';
+            closeBtn.innerText = '×';
+            closeBtn.onclick = () => wrapper.remove();
+
+            wrapper.appendChild(closeBtn);
+            wrapper.appendChild(iframe);
+            container.appendChild(wrapper);
+
+            input.value = ""; // 入力欄をクリア
+        } else {
+            alert("対応していないURL形式です。");
+        }
+    }
+
+    // Enterキーでも追加できるようにする
+    document.getElementById('urlInput').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') addVideo();
+    });
+</script>
+
+</body>
+</html>
