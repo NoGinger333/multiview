@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StreamMultiView Pro - Drag & Drop</title>
+    <title>StreamMultiView Pro - Fix</title>
     <style>
         :root {
             --bg-color: #0f0f0f;
@@ -40,29 +40,24 @@
         .video-wrapper {
             position: relative; width: 100%; height: 100%;
             background: #000; border: 2px solid transparent;
-            transition: border 0.2s, opacity 0.2s;
             display: flex; flex-direction: column;
         }
 
-        /* ドラッグ中のスタイル */
         .video-wrapper.dragging { opacity: 0.4; border: 2px dashed var(--accent-color); }
         .video-wrapper.drag-over { border: 2px solid var(--accent-color); }
 
-        /* ドラッグ用ハンドル兼コントロールバー */
         .video-header {
             height: 24px; background: #222; cursor: grab;
             display: flex; justify-content: space-between; align-items: center;
-            padding: 0 8px; font-size: 10px; color: #aaa;
+            padding: 0 8px; font-size: 10px; color: #aaa; flex-shrink: 0;
         }
-        .video-header:active { cursor: grabbing; }
 
-        iframe { flex-grow: 1; width: 100%; border: none; pointer-events: auto; }
+        iframe { flex-grow: 1; width: 100%; border: none; }
         
-        /* ドラッグ中はiframeがイベントを邪魔しないようにする */
-        .dragging iframe { pointer-events: none; }
+        /* ドラッグ中にiframeがイベントを遮断しないようカバーをかける */
+        .dragging-active iframe { pointer-events: none; }
 
         .btn-remove { background: none; color: #888; border: none; cursor: pointer; font-size: 14px; }
-        .btn-remove:hover { color: #ff4b4b; }
     </style>
 </head>
 <body>
@@ -78,29 +73,32 @@
 <div id="grid-container"></div>
 
 <script>
-    let streams = [];
     let dragSourceElement = null;
 
     window.onload = () => {
         const params = new URLSearchParams(window.location.search);
         const savedStreams = params.get('s');
         if (savedStreams) {
-            streams = savedStreams.split(',');
-            streams.forEach(url => renderVideo(decodeURIComponent(url)));
+            const urls = savedStreams.split(',');
+            urls.forEach(url => renderVideo(decodeURIComponent(url)));
             updateLayout();
         }
     };
 
     function updateUrl() {
+        const container = document.getElementById('grid-container');
+        const wrappers = container.querySelectorAll('.video-wrapper');
+        const currentUrls = Array.from(wrappers).map(w => w.dataset.url);
+        
         const params = new URLSearchParams();
-        if (streams.length > 0) params.set('s', streams.map(s => encodeURIComponent(s)).join(','));
+        if (currentUrls.length > 0) params.set('s', currentUrls.map(s => encodeURIComponent(s)).join(','));
         const newUrl = window.location.origin + window.location.pathname + (params.toString() ? '?' + params.toString() : '');
         window.history.pushState(null, '', newUrl);
     }
 
     function updateLayout() {
         const container = document.getElementById('grid-container');
-        const count = streams.length;
+        const count = container.children.length;
         if (count === 0) return;
         const cols = Math.ceil(Math.sqrt(count));
         const rows = Math.ceil(count / cols);
@@ -113,7 +111,6 @@
         const url = input.value.trim();
         if (!url) return;
         if (renderVideo(url)) {
-            streams.push(url);
             updateLayout();
             updateUrl();
             input.value = "";
@@ -137,18 +134,18 @@
 
         const wrapper = document.createElement('div');
         wrapper.className = 'video-wrapper';
-        wrapper.draggable = true; // ドラッグ可能に
+        wrapper.draggable = true;
         wrapper.dataset.url = url;
 
         wrapper.innerHTML = `
             <div class="video-header">
                 <span>::: DRAG TO REORDER</span>
-                <button class="btn-remove" onclick="removeStream('${url}', this)">✕</button>
+                <button class="btn-remove" onclick="removeStream(this)">✕</button>
             </div>
             <iframe src="${embedUrl}" allowfullscreen allow="autoplay; fullscreen"></iframe>
         `;
 
-        // ドラッグイベントの登録
+        // イベント登録
         wrapper.addEventListener('dragstart', handleDragStart);
         wrapper.addEventListener('dragenter', handleDragEnter);
         wrapper.addEventListener('dragover', handleDragOver);
@@ -160,10 +157,11 @@
         return true;
     }
 
-    // --- ドラッグ＆ドロップ ハンドラ ---
+    // --- ドラッグ＆ドロップ（改善版：DOMの入れ替えのみを行う） ---
     function handleDragStart(e) {
         dragSourceElement = this;
         this.classList.add('dragging');
+        document.body.classList.add('dragging-active');
         e.dataTransfer.effectAllowed = 'move';
     }
 
@@ -176,42 +174,37 @@
         if (this !== dragSourceElement) this.classList.add('drag-over');
     }
 
-    function handleDragLeave(e) {
+    function handleDragLeave() {
         this.classList.remove('drag-over');
     }
 
     function handleDrop(e) {
         e.stopPropagation();
         if (dragSourceElement !== this) {
-            // 要素の入れ替えロジック
             const container = document.getElementById('grid-container');
-            const allNodes = Array.from(container.children);
-            const sourceIdx = allNodes.indexOf(dragSourceElement);
-            const targetIdx = allNodes.indexOf(this);
+            const children = Array.from(container.children);
+            const fromIndex = children.indexOf(dragSourceElement);
+            const toIndex = children.indexOf(this);
 
-            // 配列（streams）の入れ替え
-            const temp = streams[sourceIdx];
-            streams.splice(sourceIdx, 1);
-            streams.splice(targetIdx, 0, temp);
-
-            // DOMのリセットと再描画（iframeの状態維持のためにはDOM操作が必要だが、今回は配列入れ替え→再描画が確実）
-            container.innerHTML = '';
-            streams.forEach(url => renderVideo(url));
-            updateLayout();
+            if (fromIndex < toIndex) {
+                this.after(dragSourceElement);
+            } else {
+                this.before(dragSourceElement);
+            }
             updateUrl();
+            updateLayout();
         }
         return false;
     }
 
     function handleDragEnd() {
         this.classList.remove('dragging');
-        const items = document.querySelectorAll('.video-wrapper');
-        items.forEach(item => item.classList.remove('drag-over'));
+        document.body.classList.remove('dragging-active');
+        document.querySelectorAll('.video-wrapper').forEach(el => el.classList.remove('drag-over'));
     }
 
-    function removeStream(url, btn) {
+    function removeStream(btn) {
         btn.closest('.video-wrapper').remove();
-        streams = streams.filter(s => s !== url);
         updateLayout();
         updateUrl();
     }
